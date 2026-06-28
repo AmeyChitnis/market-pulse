@@ -12,8 +12,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import models  # noqa: F401 — ensures models are registered on Base
 from app.database import Base, engine
-from app.routers import health
+from app.routers import collection, health, items
+from app.services.scheduler import shutdown_scheduler, start_scheduler
+import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -21,7 +27,9 @@ async def lifespan(app: FastAPI):
     # a real migration tool (Alembic) replaces this once the schema
     # stabilizes and we need versioned migrations.
     Base.metadata.create_all(bind=engine)
+    start_scheduler()
     yield
+    shutdown_scheduler()
 
 
 app = FastAPI(
@@ -41,3 +49,5 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(collection.router)
+app.include_router(items.router)

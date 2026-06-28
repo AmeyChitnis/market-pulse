@@ -1,0 +1,43 @@
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+  font-family: system-ui, -apple-system, sans-serif;
+  text-align: left;
+}
+
+h1 {
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  color: #888;
+  margin-top: 0;
+  margin-bottom: 2rem;
+}
+
+.controls {
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.controls select {
+  padding: 0.4rem 0.6rem;
+  font-size: 1rem;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  min-width: 280px;
+}
+
+.chart-container {
+  background: white;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.error {
+  color: #c0392b;
+  font-weight: 500;
+}

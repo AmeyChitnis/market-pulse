@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./market_pulse.db"
 
     # poe.ninja data source
-    poe_league: str = "Standard"
-    collector_interval_minutes: int = 60
+    poe_league: str = "Runes of Aldur"
+    collector_interval_minutes: int = 10
 
     # App
     app_env: str = "development"
