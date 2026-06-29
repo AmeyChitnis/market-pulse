@@ -1,10 +1,5 @@
 """
 Collector: pulls current prices from poe.ninja and persists them.
-
-This is the only place that writes to `items` and `price_snapshots`.
-Every call to `run_collection` does an insert-only operation on
-PriceSnapshot - existing snapshots are never updated or deleted, since
-they're the historical record this whole project is built around.
 """
 
 import logging
@@ -18,16 +13,20 @@ from app.services.poe_ninja_client import fetch_currency_overview, parse_currenc
 logger = logging.getLogger(__name__)
 
 
-def _get_or_create_item(db: Session, name: str, category: str, league: str) -> Item:
+def _get_or_create_item(
+    db: Session, name: str, category: str, league: str, image_path: str | None
+) -> Item:
     item = (
         db.query(Item)
         .filter(Item.name == name, Item.source_league == league)
         .one_or_none()
     )
     if item is not None:
+        if image_path and item.image_path != image_path:
+            item.image_path = image_path
         return item
 
-    item = Item(name=name, category=category, source_league=league)
+    item = Item(name=name, category=category, source_league=league, image_path=image_path)
     db.add(item)
     db.flush()
     return item
@@ -40,7 +39,11 @@ def run_collection(db: Session, league: str) -> int:
     snapshot_count = 0
     for line in parsed_lines:
         item = _get_or_create_item(
-            db, name=line["name"], category="Currency", league=league
+            db,
+            name=line["name"],
+            category="Currency",
+            league=league,
+            image_path=line.get("image_path"),
         )
         snapshot = PriceSnapshot(
             item_id=item.id,

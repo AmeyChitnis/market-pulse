@@ -24,6 +24,7 @@ class Item(Base):
     name: Mapped[str] = mapped_column(String(255), index=True)
     category: Mapped[str] = mapped_column(String(100), index=True)
     source_league: Mapped[str] = mapped_column(String(100), index=True)
+    image_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

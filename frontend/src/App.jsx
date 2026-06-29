@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import './App.css'
+import currencyDescriptions from './data/currencyDescriptions.json'
 
 // Base URL of the FastAPI backend. Hardcoded for now since this is a
 // local-only demo - if this app is ever deployed, this should move to
@@ -27,6 +28,25 @@ function currencyLabel(code) {
   return CURRENCIES.find((c) => c.code === code)?.label ?? code
 }
 
+// Each currency (chaos/exalted/divine) is itself a tracked item with its
+// own icon - rather than hardcoding separate icon URLs, look the
+// currency up by name in the already-loaded items list and reuse its
+// image_url. Falls back to no icon if that currency isn't in the list
+// for some reason (e.g. it hasn't been collected yet).
+function findCurrencyItem(items, currencyCode) {
+  const label = currencyLabel(currencyCode)
+  return items.find((i) => i.name === label)
+}
+
+// Format a number compactly for the rate display (e.g. 5012 -> "5.0k"),
+// matching the style of poe.ninja's own UI for large values. Small
+// values are shown with more decimal precision instead, since "0.0"
+// would lose all the information for cheap currencies.
+function formatRateValue(value) {
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
+  return value.toFixed(2)
+}
+
 // Custom tooltip: "For 1 <Item>, pay <value> <Currency>" instead of
 // Recharts' default "value: X" text.
 function PriceTooltip({ active, payload, label, itemName, currencyCode }) {
@@ -40,6 +60,94 @@ function PriceTooltip({ active, payload, label, itemName, currencyCode }) {
       <div className="price-tooltip-price">
         For 1 {itemName}, pay {value.toFixed(4)} {currencyLabel(currencyCode)}
       </div>
+    </div>
+  )
+}
+
+function ItemHoverCard({ item }) {
+  console.log('ITEMHOVERCARD IS RENDERING', item.name)
+  return (
+    <div className="item-hover-card" style={{ background: 'red', width: '300px', height: '300px', position: 'fixed', top: '50px', left: '50px' }}>
+      {item.image_url && (
+        <img src={item.image_url} alt={item.name} className="item-hover-icon" />
+      )}
+      <div className="item-hover-name">{item.name}</div>
+    </div>
+  )
+}
+
+function ItemPicker({ items, selectedItem, onSelect }) {
+  const [open, setOpen] = useState(false)
+  const [hoveredItem, setHoveredItem] = useState(null)
+  const [hoverPosition, setHoverPosition] = useState({ top: 0, left: 0 })
+
+  const selected = items.find((i) => i.name === selectedItem)
+
+  const handleMouseEnter = (item, event) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    setHoverPosition({ top: rect.top, left: rect.right + 8 })
+    setHoveredItem(item)
+  }
+
+  return (
+    <div className="item-picker">
+      <button
+        type="button"
+        className="item-picker-trigger"
+        onClick={() => setOpen((wasOpen) => !wasOpen)}
+      >
+        {selected ? selected.name : 'Select an asset'}
+        <span className="item-picker-arrow">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="item-picker-menu">
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className="item-picker-option"
+              onMouseEnter={(e) => handleMouseEnter(item, e)}
+              onMouseLeave={() => setHoveredItem(null)}
+              onClick={() => {
+                onSelect(item.name)
+                setOpen(false)
+                setHoveredItem(null)
+              }}
+            >
+              <span className="item-picker-option-name">{item.name}</span>
+              <span className="item-picker-option-prices">
+                {item.latest_value_in_chaos?.toFixed(2) ?? 'N/A'}c /{' '}
+                {item.latest_value_in_exalted?.toFixed(2) ?? 'N/A'}ex /{' '}
+                {item.latest_value_in_divine?.toFixed(4) ?? 'N/A'}div
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {hoveredItem && (
+        <div
+          className="item-hover-card"
+          style={{ top: hoverPosition.top, left: hoverPosition.left }}
+        >
+          {hoveredItem.image_url && (
+            <img src={hoveredItem.image_url} alt={hoveredItem.name} className="item-hover-icon" />
+          )}
+          <div className="item-hover-name">{hoveredItem.name}</div>
+          {currencyDescriptions[hoveredItem.name] && (
+            <div className="item-hover-description">
+              <div className="item-hover-descr-text">
+                {currencyDescriptions[hoveredItem.name].descrText}
+              </div>
+              {currencyDescriptions[hoveredItem.name].explicitMods?.map((mod, i) => (
+                <div key={i} className="item-hover-mod">
+                  {mod}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -123,32 +231,56 @@ function App() {
       {error && <p className="error">Error: {error}</p>}
 
       <div className="controls">
-        <label htmlFor="item-select">Asset: </label>
-        <select
-          id="item-select"
-          value={selectedItem}
-          onChange={(e) => setSelectedItem(e.target.value)}
-        >
-          {items.map((item) => (
-            <option key={item.id} value={item.name}>
-              {item.name} - {item.latest_value_in_chaos?.toFixed(2) ?? 'N/A'}c /{' '}
-              {item.latest_value_in_exalted?.toFixed(2) ?? 'N/A'}ex /{' '}
-              {item.latest_value_in_divine?.toFixed(4) ?? 'N/A'}div
-            </option>
-          ))}
-        </select>
+        <label>Asset: </label>
+        <ItemPicker
+          items={items}
+          selectedItem={selectedItem}
+          onSelect={setSelectedItem}
+        />
+
+        {(() => {
+          const selected = items.find((i) => i.name === selectedItem)
+          const currencyItem = findCurrencyItem(items, selectedCurrency)
+          const rateValue = selected?.[`latest_value_in_${selectedCurrency}`]
+
+          if (!selected || rateValue == null) return null
+
+          return (
+            <div className="rate-display">
+              <span className="rate-value">1</span>
+              {selected.image_url && (
+                <img src={selected.image_url} alt={selected.name} className="rate-icon" />
+              )}
+              <span className="rate-arrow">⇄</span>
+              <span className="rate-value">{formatRateValue(rateValue)}</span>
+              {currencyItem?.image_url && (
+                <img
+                  src={currencyItem.image_url}
+                  alt={currencyLabel(selectedCurrency)}
+                  className="rate-icon"
+                />
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       <div className="currency-picker">
-        {CURRENCIES.map((c) => (
-          <button
-            key={c.code}
-            className={c.code === selectedCurrency ? 'currency-btn active' : 'currency-btn'}
-            onClick={() => setSelectedCurrency(c.code)}
-          >
-            {c.label}
-          </button>
-        ))}
+        {CURRENCIES.map((c) => {
+          const currencyItem = findCurrencyItem(items, c.code)
+          return (
+            <button
+              key={c.code}
+              className={c.code === selectedCurrency ? 'currency-btn active' : 'currency-btn'}
+              onClick={() => setSelectedCurrency(c.code)}
+            >
+              {currencyItem?.image_url && (
+                <img src={currencyItem.image_url} alt={c.label} className="currency-btn-icon" />
+              )}
+              {c.label}
+            </button>
+          )
+        })}
       </div>
 
       {loading && <p>Loading history...</p>}

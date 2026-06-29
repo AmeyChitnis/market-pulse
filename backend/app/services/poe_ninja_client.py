@@ -1,18 +1,5 @@
 """
 Client for poe.ninja's live currency exchange API - PoE2 edition.
-
-PRICING MODEL - multi-currency, not a single "most popular" pick:
-    An earlier version priced each item in whichever currency
-    poe.ninja's maxVolumeCurrency said was most popular at that moment.
-    This was unstable for low-liquidity items - the "most popular
-    pairing" can flip between collection runs even when the real price
-    barely moved, causing fake-looking spikes on charts.
-
-    Fix: every item's price is reported in ALL THREE currencies
-    (chaos, exalted, divine), computed from poe.ninja's core.rates:
-        value_in_exalted = primaryValue * core.rates["exalted"]
-        value_in_chaos   = primaryValue * core.rates["chaos"]
-        value_in_divine  = primaryValue
 """
 
 import httpx
@@ -59,6 +46,11 @@ def parse_currency_lines(raw_response: dict) -> list[dict]:
         for item in raw_response.get("items", [])
         if "id" in item and "name" in item
     }
+    id_to_image = {
+        item["id"]: item.get("image")
+        for item in raw_response.get("items", [])
+        if "id" in item
+    }
 
     parsed = []
     for line in raw_response.get("lines", []):
@@ -69,6 +61,7 @@ def parse_currency_lines(raw_response: dict) -> list[dict]:
             continue
 
         name = id_to_name.get(item_id, item_id)
+        image_path = id_to_image.get(item_id)
 
         max_volume_currency = line.get("maxVolumeCurrency")
         max_volume_rate = line.get("maxVolumeRate")
@@ -82,6 +75,7 @@ def parse_currency_lines(raw_response: dict) -> list[dict]:
         parsed.append(
             {
                 "name": name,
+                "image_path": image_path,
                 "value_in_chaos": value_in_divine * rate_to_chaos,
                 "value_in_exalted": value_in_divine * rate_to_exalted,
                 "value_in_divine": value_in_divine,

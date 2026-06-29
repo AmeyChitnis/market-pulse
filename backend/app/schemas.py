@@ -12,6 +12,7 @@ class ItemSummary(BaseModel):
     name: str
     category: str
     source_league: str
+    image_url: str | None = None
     latest_value_in_chaos: float | None = None
     latest_value_in_exalted: float | None = None
     latest_value_in_divine: float | None = None

@@ -16,6 +16,15 @@ from app.schemas import ItemHistory, ItemSummary, PricePoint
 
 router = APIRouter(prefix="/items", tags=["items"])
 
+POE_CDN_BASE_URL = "https://web.poecdn.com"
+
+
+def _build_image_url(image_path: str | None) -> str | None:
+    if not image_path:
+        return None
+    return f"{POE_CDN_BASE_URL}{image_path}"
+
+
 CURRENCY_COLUMNS = {
     "chaos": PriceSnapshot.value_in_chaos,
     "exalted": PriceSnapshot.value_in_exalted,
@@ -52,6 +61,7 @@ def list_items(db: Session = Depends(get_db)):
             name=item.name,
             category=item.category,
             source_league=item.source_league,
+            image_url=_build_image_url(item.image_path),
             latest_value_in_chaos=snapshot.value_in_chaos,
             latest_value_in_exalted=snapshot.value_in_exalted,
             latest_value_in_divine=snapshot.value_in_divine,
