@@ -44,6 +44,9 @@ def run_collection(db: Session, league: str) -> int:
         )
         snapshot = PriceSnapshot(
             item_id=item.id,
+            value_in_chaos=line["value_in_chaos"],
+            value_in_exalted=line["value_in_exalted"],
+            value_in_divine=line["value_in_divine"],
             primary_value=line["primary_value"],
             primary_currency=line["primary_currency"],
             listing_count=line["listing_count"],

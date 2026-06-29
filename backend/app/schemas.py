@@ -12,14 +12,15 @@ class ItemSummary(BaseModel):
     name: str
     category: str
     source_league: str
-    latest_primary_value: float | None = None
-    primary_currency: str | None = None
+    latest_value_in_chaos: float | None = None
+    latest_value_in_exalted: float | None = None
+    latest_value_in_divine: float | None = None
 
     model_config = {"from_attributes": True}
 
 
 class PricePoint(BaseModel):
-    primary_value: float
+    value: float
     collected_at: datetime
 
     model_config = {"from_attributes": True}
@@ -28,5 +29,5 @@ class PricePoint(BaseModel):
 class ItemHistory(BaseModel):
     item_name: str
     league: str
-    primary_currency: str
+    currency: str
     points: list[PricePoint]
