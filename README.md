@@ -109,3 +109,9 @@ at `http://localhost:8000`.
   hasn't been interrupted (machine sleep, `--reload` restarts, etc. all
   reset its timer). For continuous collection, keep the backend process
   running.
+- To do: 
+  - Come up with a dashboard like view.
+  - Show currencies that have had a sudden rise/drop in value.
+  - Add existing currencies to "Basic currencies", add other currencies like omens, delerium and breach currencies.
+  - Move from personal laptop to online server (or raspberry pi?).
+  - Add predictive modelling: Predict drop or raise in basic currencies.
