@@ -19,6 +19,23 @@ PRICING - multiple currencies stored per row:
     own core.rates at collection time. A chart can now stay in ONE
     currency for an item's entire history, regardless of which currency
     poe.ninja happened to consider "most popular" at any given moment.
+
+RUN IDENTITY - why collected_at is not enough:
+    `collected_at` is stamped per row, at the moment that row is written.
+    A sweep fetches 26 categories sequentially, so rows from a single
+    sweep carry different timestamps - a few seconds apart on a laptop,
+    potentially a minute or more on a Pi Zero, where 26 TLS handshakes on
+    one slow core dominate the runtime.
+
+    That breaks anything treating "the latest timestamp" as "the latest
+    state of the market". train_model.py's time-based split does exactly
+    that: its test set would become whichever category happened to be
+    collected last, rather than a full snapshot of both games.
+
+    `collection_run_id` fixes this. Every row written by one sweep shares
+    one id, regardless of when it was individually inserted. "The most
+    recent run" becomes an exact query instead of a guess about which
+    timestamps belong together.
 """
 
 from datetime import datetime
@@ -35,6 +52,15 @@ class PriceSnapshot(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     item_id: Mapped[int] = mapped_column(
         ForeignKey("items.id", ondelete="CASCADE"), index=True
+    )
+
+    # Groups every row written by a single collection sweep. See the
+    # module docstring for why collected_at cannot serve this purpose.
+    #
+    # Nullable only so rows written before this column existed remain
+    # valid; everything written from now on always has one.
+    collection_run_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
     )
 
     # Legacy fields - poe.ninja's own "most popular currency" pick at
@@ -58,6 +84,5 @@ class PriceSnapshot(Base):
     def __repr__(self) -> str:
         return (
             f"<PriceSnapshot item_id={self.item_id} "
-            f"chaos={self.value_in_chaos} exalted={self.value_in_exalted} "
-            f"divine={self.value_in_divine} collected_at={self.collected_at}>"
+            f"run={self.collection_run_id} at={self.collected_at}>"
         )
