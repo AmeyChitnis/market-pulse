@@ -27,7 +27,34 @@ const CURRENCIES = [
 function currencyLabel(code) {
   return CURRENCIES.find((c) => c.code === code)?.label ?? code
 }
+// Which game the user picked, remembered across reloads so the modal
+// only interrupts on a genuinely first visit.
+const GAME_STORAGE_KEY = 'marketpulse.game'
 
+function GameSelectModal({ games, onSelect }) {
+  return (
+    <div className="game-modal-backdrop">
+      <div className="game-modal">
+        <h2 className="game-modal-title">Choose a game</h2>
+        <p className="game-modal-subtitle">
+          Prices are tracked separately for each game. You can switch later.
+        </p>
+        <div className="game-modal-options">
+          {games.map((g) => (
+            <button
+              key={g.game}
+              className="game-modal-btn"
+              onClick={() => onSelect(g.game)}
+            >
+              <span className="game-modal-btn-label">{g.label}</span>
+              <span className="game-modal-btn-league">{g.league}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 // Each currency (chaos/exalted/divine) is itself a tracked item with its
 // own icon - rather than hardcoding separate icon URLs, look the
 // currency up by name in the already-loaded items list and reuse its
@@ -154,6 +181,12 @@ function ItemPicker({ items, selectedItem, onSelect }) {
 
 function App() {
   // items: the full list from GET /items, used to populate the dropdown.
+  // Read the stored choice synchronously on first render, so a returning
+  // user never sees the modal flash before it loads.
+  const [selectedGame, setSelectedGame] = useState(
+    () => localStorage.getItem(GAME_STORAGE_KEY) || ''
+  )
+  const [games, setGames] = useState([])
   const [items, setItems] = useState([])
   // selectedItem: which currency the user has picked (just the name).
   const [selectedItem, setSelectedItem] = useState('')
@@ -168,21 +201,33 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+
+// Which games this backend actually collects. Read from the API rather
+  // than hardcoded, so adding a source in config.yaml surfaces here.
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/games`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Request failed: ${r.status}`)
+        return r.json()
+      })
+      .then(setGames)
+      .catch((err) => setError(err.message))
+  }, [])
   // Runs once when the component first mounts.
   useEffect(() => {
-    fetch(`${API_BASE_URL}/items`)
+    if (!selectedGame) return
+
+    fetch(`${API_BASE_URL}/items?game=${selectedGame}`)
       .then((response) => {
         if (!response.ok) throw new Error(`Request failed: ${response.status}`)
         return response.json()
       })
       .then((data) => {
         setItems(data)
-        if (data.length > 0) {
-          setSelectedItem(data[0].name)
-        }
+        setSelectedItem(data.length > 0 ? data[0].name : '')
       })
       .catch((err) => setError(err.message))
-  }, [])
+  }, [selectedGame])
 
   // Runs whenever selectedItem OR selectedCurrency changes - either one
   // changing means we need a fresh history fetch in the right currency.
@@ -192,7 +237,9 @@ function App() {
     setLoading(true)
     setError(null)
 
-    const url = `${API_BASE_URL}/items/${encodeURIComponent(selectedItem)}/history?currency=${selectedCurrency}`
+    const url =
+      `${API_BASE_URL}/items/${encodeURIComponent(selectedItem)}/history` +
+      `?game=${selectedGame}&currency=${selectedCurrency}`
 
     fetch(url)
       .then((response) => {
@@ -213,10 +260,40 @@ function App() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [selectedItem, selectedCurrency])
+  }, [selectedItem, selectedCurrency, selectedGame])
+
+  const handleSelectGame = (game) => {
+    // Clear the old game's selection first: item names are per-game, so
+    // keeping it would fire a history request that 404s.
+    setSelectedItem('')
+    setHistory([])
+    setSelectedGame(game)
+    localStorage.setItem(GAME_STORAGE_KEY, game)
+  }
+
+  const activeGame = games.find((g) => g.game === selectedGame)
+
+  if (!selectedGame) {
+    return games.length > 0 ? (
+      <GameSelectModal games={games} onSelect={handleSelectGame} />
+    ) : (
+      <div className="app">
+        <p>{error ? `Error: ${error}` : 'Loading...'}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="app">
+      <div className="game-bar">
+        <span className="game-bar-current">
+          {activeGame ? `${activeGame.label} — ${activeGame.league}` : selectedGame}
+        </span>
+        <button className="game-bar-switch" onClick={() => handleSelectGame('')}>
+          Switch game
+        </button>
+      </div>
+
       <div className="app-header">
         <h1>Market Pulse</h1>
         <p className="subtitle">Live price tracking for tradeable virtual assets</p>

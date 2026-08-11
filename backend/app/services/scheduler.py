@@ -1,14 +1,14 @@
 """
-Background scheduler: runs the poe.ninja collector on a fixed interval
-so price history accumulates automatically while the app is running.
+Background scheduler: runs the collector on a fixed interval so price
+history accumulates while the app is running.
 
-This uses APScheduler's BackgroundScheduler, which runs jobs in a
-separate thread inside the same process as the FastAPI app. That means:
-  - The scheduler only runs while `uvicorn` is running. Closing the
-    terminal stops collection too — there's no separate daemon.
-  - Each job run needs its own DB session (sessions aren't safely
-    shared across threads), so we create one specifically for the job
-    rather than reusing the request-scoped get_db() dependency.
+APScheduler's BackgroundScheduler runs jobs on a separate thread inside
+the same process as FastAPI. Consequences worth remembering:
+  - It only runs while uvicorn runs. Closing the terminal stops
+    collection; there is no separate daemon.
+  - `--reload` restarts and machine sleep both reset the interval timer.
+  - Each job run needs its own DB session (sessions are not safe to share
+    across threads), so we build one here rather than reusing get_db().
 """
 
 import logging
@@ -17,7 +17,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.config import settings
 from app.database import SessionLocal
-from app.services.collector import run_collection
+from app.services.collector import run_all_sources
 
 logger = logging.getLogger(__name__)
 
@@ -25,24 +25,37 @@ scheduler = BackgroundScheduler()
 
 
 def _scheduled_collection_job():
-    """Wraps run_collection with its own DB session and error handling.
+    """Collect every configured source, with its own session.
 
-    A failed run (e.g. poe.ninja briefly unreachable) must not crash the
-    scheduler or stop future runs — it should just log and try again
-    next interval.
+    run_all_sources already isolates per-source failures, but this outer
+    try/except is still needed: a failure to even open a session must not
+    kill the scheduler and stop all future runs.
     """
     db = SessionLocal()
     try:
-        count = run_collection(db, league=settings.poe_league)
-        logger.info("Scheduled collection succeeded: %d snapshots", count)
+        for result in run_all_sources(db):
+            if "error" in result:
+                logger.warning(
+                    "Scheduled collection FAILED game=%s league=%s: %s",
+                    result["game"],
+                    result["league"],
+                    result["error"],
+                )
+            else:
+                logger.info(
+                    "Scheduled collection ok game=%s league=%s: %d snapshots",
+                    result["game"],
+                    result["league"],
+                    result["snapshots_written"],
+                )
     except Exception:
-        logger.exception("Scheduled collection run failed")
+        logger.exception("Scheduled collection run failed before reaching sources")
     finally:
         db.close()
 
 
 def start_scheduler():
-    """Call once, at app startup. Safe to call only once per process."""
+    """Call once, at app startup."""
     scheduler.add_job(
         _scheduled_collection_job,
         trigger="interval",
@@ -51,8 +64,10 @@ def start_scheduler():
     )
     scheduler.start()
     logger.info(
-        "Scheduler started: collecting every %d minutes",
+        "Scheduler started: collecting every %d minutes from %d source(s): %s",
         settings.collector_interval_minutes,
+        len(settings.sources),
+        ", ".join(f"{s.game}/{s.league}" for s in settings.sources),
     )
 
 

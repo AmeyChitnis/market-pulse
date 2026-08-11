@@ -1,0 +1,88 @@
+# Market Pulse — collection catalog.
+#
+# This is the only file you edit to change WHAT gets collected. Add a line to
+# enable a category, comment it out to stop tracking it. No Python changes.
+#
+# Each category carries the endpoint it lives on, because poe.ninja serves them
+# from two different places with two different response shapes:
+#
+#   exchange    /{game}/api/economy/exchange/current/overview
+#               Currency-exchange pricing. Prices come as primaryValue plus a
+#               core.rates map, so all currency columns are derived from rates.
+#
+#   stash_item  /{game}/api/economy/stash/current/item/overview
+#               Stash-based item pricing. PoE 1 lines carry chaosValue,
+#               divineValue and exaltedValue directly — no rates maths needed.
+#
+# The `type` strings are poe.ninja's own, validated at startup against the
+# documented lists in app/categories.py. A typo fails the boot with a message
+# naming the bad value rather than 400ing inside a background job at 3am.
+#
+# Reference: https://poe.ninja/docs/api
+
+collector_interval_minutes: 15   # PoE 1 overviews refresh roughly every 15 min
+                                 # upstream; polling faster returns identical data.
+
+# Set true to accept `type` values not in the documented whitelist. Useful when
+# poe.ninja adds a category and you don't want to wait for a code change —
+# validation drops to a warning instead of an error.
+allow_unknown_types: false
+
+sources:
+  - game: poe1
+    league: Allflame
+    categories:
+
+      # ── General ──────────────────────────────────────────────────────────
+      - { type: Currency,           endpoint: exchange,   section: General }
+      - { type: Fragment,           endpoint: exchange,   section: General, label: Fragments }
+      - { type: Runegraft,          endpoint: exchange,   section: General, label: Runegrafts }
+      - { type: AllflameEmber,      endpoint: exchange,   section: General, label: Allflame Embers }
+      - { type: Tattoo,             endpoint: exchange,   section: General, label: Tattoos }
+      - { type: Omen,               endpoint: exchange,   section: General, label: Omens }
+      - { type: Ducat,              endpoint: exchange,   section: General, label: Ducats }
+      - { type: EnshroudingCrystal, endpoint: exchange,   section: General, label: Enshrouding Crystals }
+      - { type: DivinationCard,     endpoint: exchange,   section: General, label: Divination Cards }
+      - { type: Artifact,           endpoint: exchange,   section: General, label: Artifacts }
+      - { type: Oil,                endpoint: exchange,   section: General, label: Oils }
+      # Also available on this section but not in your list — uncomment to add:
+      # - { type: DjinnCoin,        endpoint: exchange,   section: General, label: Djinn Coins }
+
+      # ── Atlas ────────────────────────────────────────────────────────────
+      - { type: DeliriumOrb,        endpoint: exchange,   section: Atlas,   label: Delirium Orbs }
+      - { type: Scarab,             endpoint: exchange,   section: Atlas,   label: Scarabs }
+      - { type: Astrolabe,          endpoint: exchange,   section: Atlas,   label: Astrolabes }
+
+      # ── Crafting ─────────────────────────────────────────────────────────
+      - { type: Fossil,             endpoint: exchange,   section: Crafting, label: Fossils }
+      - { type: Resonator,          endpoint: exchange,   section: Crafting, label: Resonators }
+      - { type: Essence,            endpoint: exchange,   section: Crafting, label: Essences }
+
+      # ── Stash-item categories ────────────────────────────────────────────
+      # These need the stash_item parser. Leave commented until that collector
+      # is in place — enabling them before then fails these categories only,
+      # not the whole run, but there's no reason to generate the noise.
+      #
+      # - { type: Wombgift,         endpoint: stash_item, section: General,  label: Wombgifts }
+      # - { type: Map,              endpoint: stash_item, section: Atlas,    label: Maps }
+      # - { type: BlightedMap,      endpoint: stash_item, section: Atlas,    label: Blighted Maps }
+      # - { type: BlightRavagedMap, endpoint: stash_item, section: Atlas,    label: Blight-ravaged Maps }
+      # - { type: UniqueMap,        endpoint: stash_item, section: Atlas,    label: Unique Maps }
+      # - { type: ValdoMap,         endpoint: stash_item, section: Atlas,    label: Valdo Maps }
+      # - { type: Invitation,       endpoint: stash_item, section: Atlas,    label: Invitations }
+      # - { type: IncursionTemple,  endpoint: stash_item, section: Atlas,    label: Temples }
+      # - { type: Beast,            endpoint: stash_item, section: Crafting, label: Beasts }
+      # - { type: Vial,             endpoint: stash_item, section: Crafting, label: Vials }
+
+  - game: poe2
+    league: Runes of Aldur
+    categories:
+      - { type: Currency,   endpoint: exchange, section: General }
+      - { type: Fragments,  endpoint: exchange, section: General }
+      - { type: Essences,   endpoint: exchange, section: Crafting }
+      - { type: Runes,      endpoint: exchange, section: General }
+      - { type: SoulCores,  endpoint: exchange, section: General, label: Soul Cores }
+      - { type: Ritual,     endpoint: exchange, section: General, label: Omens }
+      - { type: Delirium,   endpoint: exchange, section: Atlas,   label: Liquid Emotions }
+      - { type: Breach,     endpoint: exchange, section: Atlas,   label: Catalysts }
+      - { type: Abyss,      endpoint: exchange, section: General, label: Abyssal Bones }

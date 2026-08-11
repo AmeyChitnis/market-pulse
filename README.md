@@ -112,6 +112,6 @@ at `http://localhost:8000`.
 - To do: 
   - Come up with a dashboard like view.
   - Show currencies that have had a sudden rise/drop in value.
-  - Add existing currencies to "Basic currencies", add other currencies like omens, delerium and breach currencies.
+  - Organize currencies, maps, fragments, div cards.... into categories to not flood the dropdown with all items.
   - Move from personal laptop to online server (or raspberry pi?).
   - Add predictive modelling: Predict drop or raise in basic currencies.
