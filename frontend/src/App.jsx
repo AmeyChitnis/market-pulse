@@ -14,7 +14,7 @@ import currencyDescriptions from './data/currencyDescriptions.json'
 // Base URL of the FastAPI backend. Hardcoded for now since this is a
 // local-only demo - if this app is ever deployed, this should move to
 // an environment variable instead.
-const API_BASE_URL = 'http://localhost:8000'
+const API_BASE_URL = ''
 
 // The three currencies the backend can express prices in. Order here
 // controls the order the picker buttons render in.

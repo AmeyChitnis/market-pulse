@@ -6,7 +6,7 @@ table creation), and `get_db` (as a FastAPI dependency for request-scoped
 sessions). No other module should construct its own engine or session.
 """
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import settings
@@ -20,6 +20,23 @@ connect_args = (
 )
 
 engine = create_engine(settings.database_url, connect_args=connect_args)
+
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragmas(dbapi_connection, connection_record):
+    """SD-card friendly SQLite settings.
+
+    WAL cuts write amplification, which matters on flash storage that
+    wears out. synchronous=NORMAL skips an fsync per transaction — the
+    documented risk is losing the last few transactions on power loss,
+    which for a price logger that re-collects every 15 minutes is an
+    acceptable trade against the card lasting years instead of months.
+    """
+    if not settings.database_url.startswith("sqlite"):
+        return
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -35,3 +52,4 @@ def get_db():
         yield db
     finally:
         db.close()
+

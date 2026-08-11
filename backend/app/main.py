@@ -4,6 +4,8 @@ FastAPI application entrypoint.
 Run locally with:
     uvicorn app.main:app --reload
 """
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 
 from contextlib import asynccontextmanager
 
@@ -53,3 +55,15 @@ app.include_router(health.router)
 app.include_router(collection.router)
 app.include_router(items.router)
 app.include_router(categories.router)
+
+# Serve the built React app, if it has been copied here.
+#
+# MUST come after all include_router calls: mounting at "/" catches
+# everything not already matched, so any route registered afterwards
+# would be shadowed by the static handler and 404.
+#
+# html=True makes unknown paths fall back to index.html, so a page
+# refresh on a client-side route still loads the app.
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+if STATIC_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
