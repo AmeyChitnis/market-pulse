@@ -46,6 +46,22 @@ def _validate_game(game: str) -> None:
         )
 
 
+def _validate_category(game: str, category: str) -> None:
+    """Check the category is one this game is configured to collect.
+
+    Validated against config.yaml rather than against DISTINCT category in
+    the items table, so a category that is configured but has no rows yet
+    returns an empty list (correct) instead of a 400 (misleading).
+    """
+    source = settings.source_for_game(game)
+    valid = [c.type for c in source.categories] if source else []
+    if category not in valid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"category {category!r} is not tracked for {game!r}. Valid: {valid}",
+        )
+
+
 @router.get("/games", response_model=list[GameOption])
 def list_games():
     """Which games this instance is actually collecting.
@@ -66,11 +82,19 @@ def list_games():
 @router.get("/items", response_model=list[ItemSummary])
 def list_items(
     game: str = Query(..., description="poe1 or poe2"),
+    category: str | None = Query(
+        None, description="poe.ninja category type, e.g. Scarab. Omit for all."
+    ),
     db: Session = Depends(get_db),
 ):
     """
-    Every tracked item for one game, with its most recent price in all
-    three currencies.
+    Tracked items for one game, with their most recent price in all three
+    currencies. Optionally narrowed to a single category.
+
+    The category filter exists because this endpoint now returns ~978 rows
+    for poe1 across 17 categories. Filtering server-side keeps the picker's
+    payload proportional to what the user actually selected, and stays
+    workable when the stash-endpoint categories are added on top.
 
     PERFORMANCE: this finds the latest collected_at per item_id in a
     single grouped subquery and joins it back, rather than running one
@@ -78,6 +102,8 @@ def list_items(
     history grew).
     """
     _validate_game(game)
+    if category is not None:
+        _validate_category(game, category)
 
     latest_per_item = (
         db.query(
@@ -88,7 +114,7 @@ def list_items(
         .subquery()
     )
 
-    rows = (
+    query = (
         db.query(Item, PriceSnapshot)
         .join(latest_per_item, Item.id == latest_per_item.c.item_id)
         .join(
@@ -97,9 +123,12 @@ def list_items(
             & (PriceSnapshot.collected_at == latest_per_item.c.latest_collected_at),
         )
         .filter(Item.game == game)
-        .order_by(Item.name)
-        .all()
     )
+
+    if category is not None:
+        query = query.filter(Item.category == category)
+
+    rows = query.order_by(Item.name).all()
 
     return [
         ItemSummary(
@@ -115,6 +144,28 @@ def list_items(
         )
         for item, snapshot in rows
     ]
+
+
+@router.get("/items/counts")
+def item_counts(
+    game: str = Query(..., description="poe1 or poe2"),
+    db: Session = Depends(get_db),
+):
+    """How many items exist per category, for showing counts in the picker.
+
+    Separate from /categories because that endpoint reads config only and
+    stays fast; this one hits the database. A category configured but not
+    yet collected simply won't appear here, which the frontend should treat
+    as zero rather than as an error.
+    """
+    _validate_game(game)
+    rows = (
+        db.query(Item.category, func.count(Item.id))
+        .filter(Item.game == game)
+        .group_by(Item.category)
+        .all()
+    )
+    return {category: count for category, count in rows}
 
 
 @router.get("/items/{item_name}/history", response_model=ItemHistory)

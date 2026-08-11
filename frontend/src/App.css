@@ -371,3 +371,164 @@ h1 {
   border-color: var(--mp-text-muted);
   color: var(--mp-text-primary);
 }
+
+/* ── Category navigation ───────────────────────────────────────────────
+   Append this to the end of src/App.css.
+
+   Two rows: sections (General / Atlas / Crafting) as tabs, then the
+   categories of the active section below. Colours reuse the existing
+   palette in this file so it sits with the rest of the UI rather than
+   looking bolted on.                                                     */
+
+.category-nav {
+  margin: 0 0 1.5rem;
+  border-bottom: 1px solid #2a2e3a;
+}
+
+.category-sections {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.section-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #8b8f9c;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0.5rem 0.9rem;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.section-btn:hover {
+  color: #d5d8e0;
+}
+
+.section-btn.active {
+  border-bottom-color: #7c83fb;
+  color: #e8eaf0;
+}
+
+.category-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-bottom: 0.9rem;
+}
+
+.category-btn {
+  align-items: center;
+  background: #1c1f2a;
+  border: 1px solid #2a2e3a;
+  border-radius: 999px;
+  color: #a8acb8;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.85rem;
+  gap: 0.45rem;
+  padding: 0.35rem 0.8rem;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.category-btn:hover {
+  background: #242836;
+  color: #e8eaf0;
+}
+
+.category-btn.active {
+  background: #2c2f52;
+  border-color: #7c83fb;
+  color: #e8eaf0;
+}
+
+/* Item count badge. Deliberately low-contrast: it's a hint about how much
+   is in each category, not something to read first. */
+.category-count {
+  background: #14161e;
+  border-radius: 999px;
+  color: #6f7482;
+  font-size: 0.72rem;
+  min-width: 1.4rem;
+  padding: 0.1rem 0.35rem;
+  text-align: center;
+}
+
+.category-btn.active .category-count {
+  background: #1a1c2e;
+  color: #a8acb8;
+}
+
+/* With 17 categories in General, the item picker's menu needs to stay
+   scrollable rather than running off the page. */
+.item-picker-menu {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+/* ── Item picker search ────────────────────────────────────────────────
+   Append to the end of src/App.css, after the category-nav rules.
+
+   Note the structural change: the menu now has a fixed search header and
+   a scrolling options area beneath it, so `.item-picker-menu` no longer
+   scrolls as a whole. If you added `max-height`/`overflow-y` to
+   `.item-picker-menu` earlier, remove it - it belongs on
+   `.item-picker-options` now, otherwise the search box scrolls away.   */
+
+.item-picker-search {
+  align-items: center;
+  background: #1c1f2a;
+  border-bottom: 1px solid #2a2e3a;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.item-picker-search-input {
+  background: #14161e;
+  border: 1px solid #2a2e3a;
+  border-radius: 4px;
+  color: #e8eaf0;
+  flex: 1;
+  font-size: 0.9rem;
+  outline: none;
+  padding: 0.4rem 0.6rem;
+}
+
+.item-picker-search-input:focus {
+  border-color: #7c83fb;
+}
+
+.item-picker-search-input::placeholder {
+  color: #6f7482;
+}
+
+/* "12 of 394" - only rendered while a query is active. */
+.item-picker-search-count {
+  color: #6f7482;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.item-picker-options {
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+/* Keyboard highlight. Shares its look with :hover so arrow keys and the
+   mouse feel like the same mechanism rather than two competing ones. */
+.item-picker-option.highlighted {
+  background: #242836;
+}
+
+.item-picker-empty {
+  color: #6f7482;
+  font-size: 0.88rem;
+  padding: 1rem 0.75rem;
+  text-align: center;
+}

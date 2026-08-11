@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   LineChart,
   Line,
@@ -27,9 +27,14 @@ const CURRENCIES = [
 function currencyLabel(code) {
   return CURRENCIES.find((c) => c.code === code)?.label ?? code
 }
+
 // Which game the user picked, remembered across reloads so the modal
 // only interrupts on a genuinely first visit.
 const GAME_STORAGE_KEY = 'marketpulse.game'
+
+// The category the three reference currencies live in. Both games use
+// this same category name for it.
+const CURRENCY_CATEGORY = 'Currency'
 
 function GameSelectModal({ games, onSelect }) {
   return (
@@ -55,14 +60,18 @@ function GameSelectModal({ games, onSelect }) {
     </div>
   )
 }
+
 // Each currency (chaos/exalted/divine) is itself a tracked item with its
 // own icon - rather than hardcoding separate icon URLs, look the
-// currency up by name in the already-loaded items list and reuse its
-// image_url. Falls back to no icon if that currency isn't in the list
-// for some reason (e.g. it hasn't been collected yet).
-function findCurrencyItem(items, currencyCode) {
+// currency up by name and reuse its image_url.
+//
+// NOTE: this deliberately searches a SEPARATE currencyItems list, not the
+// main items list. Once the item list is filtered to a category, the
+// reference currencies are no longer in it - so searching `items` would
+// make the currency icons vanish the moment you selected Scarabs.
+function findCurrencyItem(currencyItems, currencyCode) {
   const label = currencyLabel(currencyCode)
-  return items.find((i) => i.name === label)
+  return currencyItems.find((i) => i.name === label)
 }
 
 // Format a number compactly for the rate display (e.g. 5012 -> "5.0k"),
@@ -91,24 +100,164 @@ function PriceTooltip({ active, payload, label, itemName, currencyCode }) {
   )
 }
 
-function ItemHoverCard({ item }) {
-  console.log('ITEMHOVERCARD IS RENDERING', item.name)
+// Section tabs across the top, categories underneath. Mirrors how
+// poe.ninja groups its own sidebar. Both rows are driven by
+// GET /categories, which reads config.yaml - so re-grouping a category
+// is a YAML edit, not a frontend change.
+function CategoryNav({
+  sections,
+  selectedSection,
+  selectedCategory,
+  counts,
+  onSelectSection,
+  onSelectCategory,
+}) {
+  const activeSection = sections.find((s) => s.name === selectedSection)
+
+  if (sections.length === 0) return null
+
   return (
-    <div className="item-hover-card" style={{ background: 'red', width: '300px', height: '300px', position: 'fixed', top: '50px', left: '50px' }}>
-      {item.image_url && (
-        <img src={item.image_url} alt={item.name} className="item-hover-icon" />
-      )}
-      <div className="item-hover-name">{item.name}</div>
+    <div className="category-nav">
+      <div className="category-sections">
+        {sections.map((section) => (
+          <button
+            key={section.name}
+            className={
+              section.name === selectedSection
+                ? 'section-btn active'
+                : 'section-btn'
+            }
+            onClick={() => onSelectSection(section.name)}
+          >
+            {section.name}
+          </button>
+        ))}
+      </div>
+
+      <div className="category-list">
+        {activeSection?.categories.map((category) => (
+          <button
+            key={category.type}
+            className={
+              category.type === selectedCategory
+                ? 'category-btn active'
+                : 'category-btn'
+            }
+            onClick={() => onSelectCategory(category.type)}
+          >
+            {category.label}
+            {counts[category.type] != null && (
+              <span className="category-count">{counts[category.type]}</span>
+            )}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
 
+// Score how well an item name matches the typed query. Higher is better;
+// -1 means no match at all.
+//
+// Plain substring matching covers more than it looks like it would,
+// because the query can span a word boundary: "y mem" matches
+// "A Dust(y Mem)ory" directly. The token pass below is only there for
+// out-of-order queries like "memory dusty", which substring can't catch.
+//
+// Deliberately NOT a fuzzy/subsequence match: on 394 divination cards,
+// subsequence matching returns almost everything for short queries and
+// the ranking stops meaning anything.
+function scoreMatch(name, query) {
+  const q = query.toLowerCase().trim()
+  if (!q) return 0
+
+  const n = name.toLowerCase()
+
+  if (n.startsWith(q)) return 3        // "a dus" -> A Dusty Memory
+  if (n.includes(q)) return 2          // "y mem" -> A Dusty Memory
+
+  const tokens = q.split(/\s+/)
+  if (tokens.length > 1 && tokens.every((t) => n.includes(t))) return 1
+
+  return -1
+}
+
 function ItemPicker({ items, selectedItem, onSelect }) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [highlight, setHighlight] = useState(0)
   const [hoveredItem, setHoveredItem] = useState(null)
   const [hoverPosition, setHoverPosition] = useState({ top: 0, left: 0 })
 
+  const containerRef = useRef(null)
+  const inputRef = useRef(null)
+
   const selected = items.find((i) => i.name === selectedItem)
+
+  // Rank matches, then fall back to alphabetical within the same score so
+  // the ordering is stable and doesn't jump around as you type.
+  const visibleItems = items
+    .map((item) => ({ item, score: scoreMatch(item.name, query) }))
+    .filter(({ score }) => score >= 0)
+    .sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name))
+    .map(({ item }) => item)
+
+  // Close when clicking anywhere outside. Needed now that the menu holds a
+  // text input - without it, clicking away leaves the menu covering the
+  // chart with no obvious way to dismiss it.
+  useEffect(() => {
+    if (!open) return
+
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false)
+        setHoveredItem(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  // Focus the search box as soon as the menu opens, so you can start
+  // typing without a second click.
+  useEffect(() => {
+    if (open) inputRef.current?.focus()
+  }, [open])
+
+  // A changing filter can leave the highlight past the end of the list.
+  useEffect(() => {
+    setHighlight(0)
+  }, [query])
+
+  const choose = (item) => {
+    onSelect(item.name)
+    setOpen(false)
+    setQuery('')
+    setHoveredItem(null)
+  }
+
+  const handleKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      setOpen(false)
+      setQuery('')
+      return
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setHighlight((h) => Math.min(h + 1, visibleItems.length - 1))
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setHighlight((h) => Math.max(h - 1, 0))
+      return
+    }
+    if (event.key === 'Enter' && visibleItems[highlight]) {
+      event.preventDefault()
+      choose(visibleItems[highlight])
+    }
+  }
 
   const handleMouseEnter = (item, event) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -117,7 +266,7 @@ function ItemPicker({ items, selectedItem, onSelect }) {
   }
 
   return (
-    <div className="item-picker">
+    <div className="item-picker" ref={containerRef}>
       <button
         type="button"
         className="item-picker-trigger"
@@ -129,26 +278,54 @@ function ItemPicker({ items, selectedItem, onSelect }) {
 
       {open && (
         <div className="item-picker-menu">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className="item-picker-option"
-              onMouseEnter={(e) => handleMouseEnter(item, e)}
-              onMouseLeave={() => setHoveredItem(null)}
-              onClick={() => {
-                onSelect(item.name)
-                setOpen(false)
-                setHoveredItem(null)
-              }}
-            >
-              <span className="item-picker-option-name">{item.name}</span>
-              <span className="item-picker-option-prices">
-                {item.latest_value_in_chaos?.toFixed(2) ?? 'N/A'}c /{' '}
-                {item.latest_value_in_exalted?.toFixed(2) ?? 'N/A'}ex /{' '}
-                {item.latest_value_in_divine?.toFixed(4) ?? 'N/A'}div
+          <div className="item-picker-search">
+            <input
+              ref={inputRef}
+              type="text"
+              className="item-picker-search-input"
+              placeholder="Search assets..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+            {query && (
+              <span className="item-picker-search-count">
+                {visibleItems.length} of {items.length}
               </span>
-            </div>
-          ))}
+            )}
+          </div>
+
+          <div className="item-picker-options">
+            {visibleItems.map((item, index) => (
+              <div
+                key={item.id}
+                className={
+                  index === highlight
+                    ? 'item-picker-option highlighted'
+                    : 'item-picker-option'
+                }
+                onMouseEnter={(e) => {
+                  setHighlight(index)
+                  handleMouseEnter(item, e)
+                }}
+                onMouseLeave={() => setHoveredItem(null)}
+                onClick={() => choose(item)}
+              >
+                <span className="item-picker-option-name">{item.name}</span>
+                <span className="item-picker-option-prices">
+                  {item.latest_value_in_chaos?.toFixed(2) ?? 'N/A'}c /{' '}
+                  {item.latest_value_in_exalted?.toFixed(2) ?? 'N/A'}ex /{' '}
+                  {item.latest_value_in_divine?.toFixed(4) ?? 'N/A'}div
+                </span>
+              </div>
+            ))}
+
+            {visibleItems.length === 0 && (
+              <div className="item-picker-empty">
+                No assets in this category match "{query}"
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -180,29 +357,35 @@ function ItemPicker({ items, selectedItem, onSelect }) {
 }
 
 function App() {
-  // items: the full list from GET /items, used to populate the dropdown.
   // Read the stored choice synchronously on first render, so a returning
   // user never sees the modal flash before it loads.
   const [selectedGame, setSelectedGame] = useState(
     () => localStorage.getItem(GAME_STORAGE_KEY) || ''
   )
   const [games, setGames] = useState([])
+
+  // Category navigation, all driven by GET /categories.
+  const [sections, setSections] = useState([])
+  const [selectedSection, setSelectedSection] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('')
+  const [counts, setCounts] = useState({})
+
+  // items: the list for the SELECTED CATEGORY only, used by the picker.
   const [items, setItems] = useState([])
-  // selectedItem: which currency the user has picked (just the name).
+  // currencyItems: the Currency category, kept separately and only for
+  // icons. See findCurrencyItem for why this can't share `items`.
+  const [currencyItems, setCurrencyItems] = useState([])
+
   const [selectedItem, setSelectedItem] = useState('')
   // selectedCurrency: which of chaos/exalted/divine the chart is shown
   // in. User-controlled via the picker buttons, so the chart always
-  // stays in ONE currency for an item's whole history - this is what
-  // fixes the fake-looking spikes that happened when the backend used
-  // to switch currencies on its own between collection runs.
+  // stays in ONE currency for an item's whole history.
   const [selectedCurrency, setSelectedCurrency] = useState('exalted')
-  // history: the price history points for whichever item is selected.
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-
-// Which games this backend actually collects. Read from the API rather
+  // Which games this backend actually collects. Read from the API rather
   // than hardcoded, so adding a source in config.yaml surfaces here.
   useEffect(() => {
     fetch(`${API_BASE_URL}/games`)
@@ -213,11 +396,61 @@ function App() {
       .then(setGames)
       .catch((err) => setError(err.message))
   }, [])
-  // Runs once when the component first mounts.
+
+  // Category catalog for this game, plus a default selection. Sections
+  // arrive in the order they appear in config.yaml, so the UI grouping
+  // always matches the file you edit.
   useEffect(() => {
     if (!selectedGame) return
 
-    fetch(`${API_BASE_URL}/items?game=${selectedGame}`)
+    fetch(`${API_BASE_URL}/categories`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Request failed: ${r.status}`)
+        return r.json()
+      })
+      .then((data) => {
+        const entry = data.find((d) => d.game === selectedGame)
+        const gameSections = entry?.sections ?? []
+        setSections(gameSections)
+
+        const firstSection = gameSections[0]
+        setSelectedSection(firstSection?.name ?? '')
+        setSelectedCategory(firstSection?.categories[0]?.type ?? '')
+      })
+      .catch((err) => setError(err.message))
+  }, [selectedGame])
+
+  // Item counts per category, for the badges on the category buttons.
+  // A missing key means zero collected so far, not an error.
+  useEffect(() => {
+    if (!selectedGame) return
+
+    fetch(`${API_BASE_URL}/items/counts?game=${selectedGame}`)
+      .then((r) => (r.ok ? r.json() : {}))
+      .then(setCounts)
+      .catch(() => setCounts({}))
+  }, [selectedGame])
+
+  // The reference currencies, fetched once per game and held apart from
+  // the filtered item list purely so their icons stay available.
+  useEffect(() => {
+    if (!selectedGame) return
+
+    fetch(`${API_BASE_URL}/items?game=${selectedGame}&category=${CURRENCY_CATEGORY}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setCurrencyItems)
+      .catch(() => setCurrencyItems([]))
+  }, [selectedGame])
+
+  // The item list for the picker. Refetches whenever the category
+  // changes, and resets the selected item - otherwise you'd be charting
+  // a Scarab while the picker reads "Oils".
+  useEffect(() => {
+    if (!selectedGame || !selectedCategory) return
+
+    fetch(
+      `${API_BASE_URL}/items?game=${selectedGame}&category=${encodeURIComponent(selectedCategory)}`
+    )
       .then((response) => {
         if (!response.ok) throw new Error(`Request failed: ${response.status}`)
         return response.json()
@@ -225,9 +458,10 @@ function App() {
       .then((data) => {
         setItems(data)
         setSelectedItem(data.length > 0 ? data[0].name : '')
+        setHistory([])
       })
       .catch((err) => setError(err.message))
-  }, [selectedGame])
+  }, [selectedGame, selectedCategory])
 
   // Runs whenever selectedItem OR selectedCurrency changes - either one
   // changing means we need a fresh history fetch in the right currency.
@@ -263,12 +497,24 @@ function App() {
   }, [selectedItem, selectedCurrency, selectedGame])
 
   const handleSelectGame = (game) => {
-    // Clear the old game's selection first: item names are per-game, so
-    // keeping it would fire a history request that 404s.
+    // Clear the old game's selection first: item names and categories are
+    // per-game, so keeping them would fire requests that 404 or 400.
     setSelectedItem('')
     setHistory([])
+    setItems([])
+    setSections([])
+    setSelectedSection('')
+    setSelectedCategory('')
     setSelectedGame(game)
     localStorage.setItem(GAME_STORAGE_KEY, game)
+  }
+
+  // Picking a section jumps to its first category, so the item list is
+  // never left showing a category from the section you just left.
+  const handleSelectSection = (sectionName) => {
+    setSelectedSection(sectionName)
+    const section = sections.find((s) => s.name === sectionName)
+    setSelectedCategory(section?.categories[0]?.type ?? '')
   }
 
   const activeGame = games.find((g) => g.game === selectedGame)
@@ -298,14 +544,23 @@ function App() {
         <h1>Market Pulse</h1>
         <p className="subtitle">Live price tracking for tradeable virtual assets</p>
         <p className="project-blurb">
-          A small full-stack project tracking Path of Exile 2's in-game currency
-          exchange rates over time, used here as a free, fast-moving real-world
+          A small full-stack project tracking Path of Exile's in-game item and
+          currency prices over time, used here as a free, fast-moving real-world
           dataset for practicing data collection, time-series storage, and API
           design.
         </p>
       </div>
 
       {error && <p className="error">Error: {error}</p>}
+
+      <CategoryNav
+        sections={sections}
+        selectedSection={selectedSection}
+        selectedCategory={selectedCategory}
+        counts={counts}
+        onSelectSection={handleSelectSection}
+        onSelectCategory={setSelectedCategory}
+      />
 
       <div className="controls">
         <label>Asset: </label>
@@ -317,7 +572,7 @@ function App() {
 
         {(() => {
           const selected = items.find((i) => i.name === selectedItem)
-          const currencyItem = findCurrencyItem(items, selectedCurrency)
+          const currencyItem = findCurrencyItem(currencyItems, selectedCurrency)
           const rateValue = selected?.[`latest_value_in_${selectedCurrency}`]
 
           if (!selected || rateValue == null) return null
@@ -344,7 +599,7 @@ function App() {
 
       <div className="currency-picker">
         {CURRENCIES.map((c) => {
-          const currencyItem = findCurrencyItem(items, c.code)
+          const currencyItem = findCurrencyItem(currencyItems, c.code)
           return (
             <button
               key={c.code}
@@ -396,6 +651,10 @@ function App() {
 
       {!loading && history.length === 0 && selectedItem && (
         <p>No history yet for {selectedItem} in this currency.</p>
+      )}
+
+      {!loading && items.length === 0 && selectedCategory && (
+        <p>Nothing collected yet for {selectedCategory}.</p>
       )}
     </div>
   )
